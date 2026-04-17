@@ -46,9 +46,13 @@ DISTRICTS = {
 
 TOILETS_DATA = []
 
-# Generate 2-3 toilets for each of the 38 districts
+# Generate exactly 94 toilets across the 38 districts
+districts_list = list(DISTRICTS.keys())
+# To get exactly 94: (18 * 3) + (20 * 2) = 54 + 40 = 94
+districts_with_3 = set(random.sample(districts_list, k=18))
+
 for city, coords in DISTRICTS.items():
-    num_toilets = random.randint(2, 3)
+    num_toilets = 3 if city in districts_with_3 else 2
     for j in range(1, num_toilets + 1):
         uid = f"T_{city.upper().replace(' ', '')}_{j:02d}"
         if j == 1:
@@ -147,7 +151,7 @@ def init_db():
     return conn, cursor
 
 def populate_data(conn, cursor):
-    print(f"Generating {len(TOILETS_DATA)} toilets across exactly 38 districts...")
+    print(f"Generating exactly {len(TOILETS_DATA)} toilets across exactly 38 districts...")
     toilet_ids = []
     
     for t in TOILETS_DATA:

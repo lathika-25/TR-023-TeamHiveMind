@@ -10,6 +10,71 @@ import plotly.express as px
 
 st.set_page_config(page_title="Sanitation Monitoring System", layout="wide")
 
+# CSS Styling to enforce lavender theme
+st.markdown("""
+<style>
+/* Background: light lavender */
+body, [data-testid="stAppViewContainer"] {
+    background-color: #E8EAF6 !important;
+}
+
+/* Text color: dark gray */
+html, body, [class*="css"], p, span, div, label {
+    color: #2d3436 !important;
+}
+
+/* Sidebar background */
+[data-testid="stSidebar"] {
+    background-color: #1a1a2e !important;
+}
+
+/* Fix sidebar selectbox and other text contrast */
+[data-testid="stSidebar"], [data-testid="stSidebar"] p, [data-testid="stSidebar"] div, [data-testid="stSidebar"] label {
+    color: #ffffff !important;
+}
+
+/* Fix the dropdown box itself inside the sidebar */
+[data-testid="stSidebar"] div[data-baseweb="select"] * {
+    color: #ffffff !important;
+}
+
+/* Fix dropdown options list popover (rendered globally via portal) */
+[data-baseweb="popover"] ul {
+    background-color: #1a1a2e !important;
+}
+[data-baseweb="popover"] li, [data-baseweb="popover"] li * {
+    color: #ffffff !important;
+}
+[data-baseweb="popover"] li:hover, [data-baseweb="popover"] li:hover * {
+    background-color: #6c5ce7 !important;
+}
+
+/* Cards/containers: White background, rounded corners, subtle shadows */
+[data-testid="stForm"], .stDataFrame, .stPlotlyChart {
+    background-color: #ffffff !important;
+    border-radius: 12px !important;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
+    padding: 1rem !important;
+}
+
+/* Buttons: purple with white text */
+.stButton > button {
+    background-color: #6c5ce7 !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 8px !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+}
+
+/* Headers: deep purple */
+h1, h2, h3 {
+    color: #4a148c !important;
+    background: transparent !important;
+    padding: 0 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 ISSUE_KEYWORDS = {
     "Cleanliness": ["dirty", "filthy", "garbage", "waste", "stained", "messy", "unclean", "dust", "mud"],
     "Water Supply": ["no water", "dry tap", "water not working", "no supply", "tap dry", "water problem"],
@@ -41,6 +106,14 @@ def extract_issues(text):
     text_lower = text.lower()
     return [cat for cat, kws in ISSUE_KEYWORDS.items() if any(kw in text_lower for kw in kws)]
 
+def get_badge(score):
+    if score >= 4.0:
+        return "<span style='background-color:#00b894;color:#ffffff;padding:4px 8px;border-radius:12px;font-size:12px;font-weight:bold;'>Clean</span>"
+    elif score >= 2.5:
+        return "<span style='background-color:#fdcb6e;color:#2d3436;padding:4px 8px;border-radius:12px;font-size:12px;font-weight:bold;'>Moderate</span>"
+    else:
+        return "<span style='background-color:#e17055;color:#ffffff;padding:4px 8px;border-radius:12px;font-size:12px;font-weight:bold;'>Critical</span>"
+
 def send_sms_alert(toilet_id, toilet_name, city, score, issues, staff_id, staff_phone, manual=False):
     message = f"URGENT: {toilet_name} in {city} has a hygiene score of {score}/5. Issues detected: {issues}. Immediate action required."
     
@@ -60,20 +133,22 @@ def send_sms_alert(toilet_id, toilet_name, city, score, issues, staff_id, staff_
 
 
 # Initialize session state for GPS
-if 'lat' not in st.session_state:
-    st.session_state['lat'] = None
-if 'lng' not in st.session_state:
-    st.session_state['lng'] = None
-if 'gps_error' not in st.session_state:
-    st.session_state['gps_error'] = None
+if 'gps_lat' not in st.session_state:
+    st.session_state.gps_lat = None
+if 'gps_lng' not in st.session_state:
+    st.session_state.gps_lng = None
 
-# Update session state from query params
+# Step 2: Add Python code to read coordinates from URL
 params = st.query_params
-if "lat" in params and "lng" in params:
-    st.session_state['lat'] = float(params["lat"])
-    st.session_state['lng'] = float(params["lng"])
-if "gps_error" in params:
-    st.session_state['gps_error'] = params["gps_error"]
+if 'lat' in params and 'lng' in params:
+    st.session_state.gps_lat = float(params['lat'])
+    st.session_state.gps_lng = float(params['lng'])
+    st.query_params.clear()
+
+if 'gps_error' in params:
+    st.error(f"Location error: {params['gps_error']}. Please use manual entry.")
+    st.query_params.clear()
+
 
 st.title("Sanitation Monitoring System - Tamil Nadu")
 page = st.sidebar.radio("Navigate", ["Submit Review", "Map View", "ULB Dashboard"])
@@ -84,42 +159,34 @@ if page == "Submit Review":
 
     col1, col2 = st.columns([1, 1])
     with col1:
+        # Step 1: Add a simple HTML button with JavaScript that works
         st.components.v1.html("""
-            <script>
-            function getLocation() {
-              if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(showPosition, showError, {timeout: 10000});
-              } else {
-                window.parent.location.search = "?gps_error=unsupported";
-              }
+        <script>
+        function getLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        window.top.location.href = window.top.location.pathname + '?lat=' + position.coords.latitude + '&lng=' + position.coords.longitude;
+                    },
+                    (error) => {
+                        alert('Location error: ' + error.message + '. Please use manual entry.');
+                        window.top.location.href = window.top.location.pathname + '?gps_error=' + error.message;
+                    }
+                );
+            } else {
+                alert('GPS not supported. Please use manual entry.');
             }
-            function showPosition(position) {
-              window.parent.location.search = "?lat=" + position.coords.latitude + "&lng=" + position.coords.longitude;
-            }
-            function showError(error) {
-                 if(error.code === error.PERMISSION_DENIED) {
-                     window.parent.location.search = "?gps_error=denied";
-                 } else {
-                     window.parent.location.search = "?gps_error=timeout";
-                 }
-            }
-            </script>
-            <button onclick="getLocation()" style="padding: 10px 20px; background-color: #ee4444; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; width:100%;">
-                📍 Use My Current Location
-            </button>
+        }
+        </script>
+        <button onclick="getLocation()" style="padding: 10px; background-color: #6c5ce7; color: white; border: none; border-radius: 8px; cursor: pointer; width: 100%; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📍 Use My Current Location</button>
         """, height=60)
         
     with col2:
         manual_location = st.text_input("📍 Enter Location Manually", placeholder="e.g. Trichy Bus Stand")
 
     # Display GPS States
-    if st.session_state['gps_error']:
-        if st.session_state['gps_error'] == "denied":
-            st.warning("⚠️ GPS Permission Denied by user. Please use manual entry.")
-        else:
-            st.error("⚠️ GPS Timeout or Error. Please use manual entry.")
-    elif st.session_state['lat'] is not None and st.session_state['lng'] is not None:
-        st.success(f"✅ GPS Location Acquired: Latitude {st.session_state['lat']:.4f}, Longitude {st.session_state['lng']:.4f}")
+    if st.session_state.gps_lat is not None and st.session_state.gps_lng is not None:
+        st.success(f"📍 Location captured: {st.session_state.gps_lat:.4f}, {st.session_state.gps_lng:.4f}")
 
     st.write("---")
     
@@ -132,12 +199,13 @@ if page == "Submit Review":
         if submitted:
             if not review_text.strip():
                 st.error("Please enter review text.")
-            elif not manual_location and st.session_state['lat'] is None:
+            elif not manual_location and st.session_state.gps_lat is None:
                 st.error("Please provide your location either via GPS button or manually typing.")
             else:
                 toilets_df = fetch_data("SELECT * FROM toilets")
                 nearest_toilet = None
                 
+                # Step 3: Use these coordinates to find nearest toilet
                 if manual_location:
                     query = manual_location.lower()
                     query_words = set(query.split())
@@ -146,15 +214,12 @@ if page == "Submit Review":
                         score = 0
                         t_name = str(r['name']).lower()
                         t_city = str(r['city']).lower()
-                        
                         if query in t_name: score += 10
                         if query in t_city: score += 5
-                        
                         name_words = set(t_name.split())
                         city_words = set(t_city.split())
                         common_words = query_words.intersection(name_words.union(city_words))
                         score += len(common_words)
-                        
                         return score
                         
                     toilets_df['match_score'] = toilets_df.apply(match_score, axis=1)
@@ -166,7 +231,7 @@ if page == "Submit Review":
                         nearest_toilet = toilets_df.iloc[0]
                         st.warning(f"Could not find exact match for '{manual_location}'. Using default location: {nearest_toilet['name']}")
                 else: 
-                    toilets_df['distance'] = toilets_df.apply(lambda r: distance(st.session_state['lat'], st.session_state['lng'], r['lat'], r['lng']), axis=1)
+                    toilets_df['distance'] = toilets_df.apply(lambda r: distance(st.session_state.gps_lat, st.session_state.gps_lng, r['lat'], r['lng']), axis=1)
                     nearest_toilet = toilets_df.loc[toilets_df['distance'].idxmin()]
 
                 if nearest_toilet is not None:
@@ -177,8 +242,8 @@ if page == "Submit Review":
                     final_score = max(1.0, min(5.0, rating - deduction))
                     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     
-                    record_lat = st.session_state['lat'] if st.session_state['lat'] else nearest_toilet['lat']
-                    record_lng = st.session_state['lng'] if st.session_state['lng'] else nearest_toilet['lng']
+                    record_lat = st.session_state.gps_lat if st.session_state.gps_lat else nearest_toilet['lat']
+                    record_lng = st.session_state.gps_lng if st.session_state.gps_lng else nearest_toilet['lng']
                     
                     execute_query('''
                         INSERT INTO reviews (toilet_id, user_rating, review_text, detected_issues, hygiene_score, timestamp, latitude, longitude, city)
@@ -191,6 +256,15 @@ if page == "Submit Review":
                     st.success(f"Review submitted successfully! Extracted Hygiene Score: {final_score:.1f}/5.0")
                     st.info(f"Matched facility: {nearest_toilet['name']} in {nearest_toilet['city']}")
                     
+                    st.info(f"""
+**Hygiene Score Formula Calculation:**
+- **Formula:** Hygiene Score = User Rating - (Issue Count × 0.5)
+- **User Rating:** {rating} ⭐
+- **Issues Detected ({len(detected_issues_list)}):** {', '.join(detected_issues_list) if detected_issues_list else 'None'}
+- **Calculated Deduction:** -{deduction:.1f}
+- **Final Score:** {final_score:.1f} / 5.0 (Score is capped to never drop below 1.0 or exceed 5.0)
+                    """)
+
                     if final_score < 2.5:
                         staff_df = fetch_data(f"SELECT id, phone FROM staff WHERE assigned_toilet_ids LIKE '%{nearest_toilet['id']}%'")
                         if not staff_df.empty:
@@ -233,7 +307,7 @@ elif page == "Map View":
         score = row['average_score']
         color = 'green' if score >= 4.0 else 'red' if score < 2.5 else 'orange'
             
-        popup_html = f"<b>{row['name']}</b><br><i>{row['city']}</i><br><b>Score:</b> {score:.1f}/5.0<br><hr><b>Latest Review:</b> {row['review_text'] if pd.notnull(row['review_text']) else 'No reviews yet'}<br><b>Issues Detect:</b> {row['detected_issues'] if pd.notnull(row['detected_issues']) else 'None'}"
+        popup_html = f"<b>{row['name']}</b><br><i>{row['city']}</i><br><b>Score:</b> {score:.1f}/5.0 <span title='Score = Rating - (Issues × 0.5)'>ℹ️</span><br><hr><b>Latest Review:</b> {row['review_text'] if pd.notnull(row['review_text']) else 'No reviews yet'}<br><b>Issues Detect:</b> {row['detected_issues'] if pd.notnull(row['detected_issues']) else 'None'}"
         folium.Marker(
             location=[row['lat'], row['lng']],
             popup=folium.Popup(popup_html, max_width=300),
@@ -267,7 +341,7 @@ elif page == "ULB Dashboard":
             cols = st.columns([2, 1, 1, 2, 2, 2, 2])
             cols[0].write("**Toilet Name**")
             cols[1].write("**City**")
-            cols[2].write("**Score**")
+            cols[2].markdown("**Score** <span title='Score = Rating - (Issues × 0.5)'>ℹ️</span>", unsafe_allow_html=True)
             cols[3].write("**Issues**")
             cols[4].write("**Staff**")
             cols[5].write("**Phone**")
@@ -277,7 +351,7 @@ elif page == "ULB Dashboard":
                 c1, c2, c3, c4, c5, c6, c7 = st.columns([2, 1, 1, 2, 2, 2, 2])
                 c1.write(f"{row['name']}")
                 c2.write(f"{row['city']}")
-                c3.write(f"{row['score']:.1f}")
+                c3.markdown(f"{row['score']:.1f} {get_badge(row['score'])}", unsafe_allow_html=True)
                 c4.write(f"{row['issues']}")
                 c5.write(f"{row['staff_name']}")
                 c6.write(f"{row['staff_phone']}")
@@ -304,9 +378,14 @@ elif page == "ULB Dashboard":
         
         issue_counts = {k: 0 for k in ISSUE_KEYWORDS.keys()}
         for texts in all_reviews['detected_issues']:
-            for issue in texts.split(','):
-                i = issue.strip()
-                if i in issue_counts: issue_counts[i] += 1
+            for issue in str(texts).split(','):
+                i = issue.strip().lower()
+                matched = False
+                for cat, kws in ISSUE_KEYWORDS.items():
+                    if i == cat.lower() or any(kw in i for kw in kws):
+                        issue_counts[cat] += 1
+                        matched = True
+                        break
                 
         if sum(issue_counts.values()) > 0:
             chart_df = pd.DataFrame([{"Issue Category": k, "Count": v} for k,v in issue_counts.items()])
